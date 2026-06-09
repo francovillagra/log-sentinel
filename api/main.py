@@ -17,10 +17,14 @@ from engine.engine import Engine
 from engine.parsers.jsonl import JsonLinesParser
 from engine.parsers.nginx import NginxCombinedParser
 from api.middleware.cors import setup_cors
+from api.routes.alerts_history import router as alerts_history_router
+from api.routes.auth import router as auth_router
 from api.routes.health import router as health_router
 from api.routes.ingest import router as ingest_router
 from api.routes.ws import router as ws_router
+from api.services.auth_service import hash_password
 from api.services.broadcaster import broadcaster
+from api.services.db import get_pool
 from api.services.redis_client import get_redis
 from api.services.stream import read_new_alerts
 
@@ -42,6 +46,23 @@ def build_engine() -> Engine:
             RateAnomalyDetector(),
         ],
     )
+
+
+async def ensure_admin_user(pool) -> None:
+    """Seed the initial admin user if the users table is empty."""
+    email = os.environ.get("ADMIN_EMAIL", "admin@log-sentinel.dev")
+    password = os.environ.get("ADMIN_PASSWORD")
+    if not password:
+        raise RuntimeError("ADMIN_PASSWORD is not configured")
+
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT count(*) FROM users")
+        if count == 0:
+            await conn.execute(
+                "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
+                email,
+                hash_password(password),
+            )
 
 
 async def broadcast_loop() -> None:
@@ -70,6 +91,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = await get_redis()
     log.info("engine and redis client initialized")
 
+    app.state.db_pool = await get_pool()
+    log.info("database pool initialized")
+
+    await ensure_admin_user(app.state.db_pool)
+    log.info("admin user ready")
+
     task = asyncio.create_task(broadcast_loop())
     app.state.broadcaster_task = task
     log.info("broadcast_loop started")
@@ -83,6 +110,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pass
 
     await app.state.redis.aclose()
+    await app.state.db_pool.close()
     log.info("shutdown complete")
 
 
@@ -97,3 +125,5 @@ setup_cors(app)
 app.include_router(health_router)
 app.include_router(ingest_router)
 app.include_router(ws_router)
+app.include_router(auth_router)
+app.include_router(alerts_history_router)

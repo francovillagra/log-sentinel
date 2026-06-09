@@ -1,9 +1,11 @@
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, model_validator
 
 from api.dependencies import verify_api_key
+from api.services.alerts_db import save_alert
 from api.services.stream import write_alert
 from engine.models import Alert
 
@@ -68,6 +70,9 @@ async def ingest(body: IngestRequest, request: Request) -> IngestResponse:
         _event, alerts = engine.process_line(raw)
         for alert in alerts:
             await write_alert(redis, alert)
+            # Persist to Postgres fire-and-forget: a DB write must never block
+            # the HTTP response nor fail ingestion.
+            asyncio.create_task(save_alert(request.app.state.db_pool, alert))
             alerts_out.append(AlertOut(**_alert_to_dict(alert)))
 
     return IngestResponse(
