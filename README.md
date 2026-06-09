@@ -186,3 +186,16 @@ Este proyecto forma parte de una dupla de seguridad:
 | **log-sentinel** | 🔵 Defensiva | Detección y monitoreo de ataques en tiempo real |
 
 La combinación ilustra el ciclo completo: identificar vectores de ataque (red team) y detectarlos en producción (blue team).
+
+---
+
+## Autor
+
+**Franco Villagra** — Desarrollador Ciberseguridad
+
+- Portfolio: https://francoverse.vercel.app/
+- GitHub: [@francovillagra](https://github.com/francovillagra)
+
+## Licencia
+
+Licencia MIT — libre para usar, modificar y distribuir.
