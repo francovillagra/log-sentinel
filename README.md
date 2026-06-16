@@ -8,6 +8,8 @@ Sistema SIEM liviano de Blue Team que ingiere logs, detecta patrones de ataque e
 
 **🔴 Demo en vivo:** https://log-sentinel-eta.vercel.app
 
+![demo](docs/demo.gif)
+
 ---
 
 ## Arquitectura
@@ -68,7 +70,9 @@ POST /api/v1/ingest
 |---|---|
 | Motor de detección | Python 3.11 (stdlib only) |
 | API + WebSocket | FastAPI + Uvicorn |
+| Autenticación | JWT (PyJWT) |
 | Stream de eventos | Redis Streams |
+| Persistencia | Supabase (PostgreSQL) |
 | Dashboard | Next.js 15 + TypeScript + Tailwind CSS |
 | Visualización | Recharts |
 | Backend hosting | Railway |
@@ -133,6 +137,17 @@ npm install
 npm run dev
 ```
 
+### Simulador de tráfico
+
+```bash
+INGEST_API_KEY=<your-key> python simulator/run.py
+
+# Genera tráfico continuo (normal + 6 escenarios de ataque) para demos en vivo.
+# Variables opcionales:
+#   RATE=2.0          requests por segundo (default: 2)
+#   ATTACK_RATIO=0.3  proporción de tráfico malicioso (default: 0.3)
+```
+
 ### Test rápido end-to-end
 
 Con la API corriendo, enviá una línea de log con ataque:
@@ -160,9 +175,20 @@ Resultado esperado: `alerts_fired: 2` (`path_traversal` HIGH + `suspicious_ua` M
 ```
 INGEST_API_KEY=<clave-secreta>
 CORS_ORIGINS=https://log-sentinel-eta.vercel.app
+DATABASE_URL=<supabase-postgres-connection-string>
+JWT_SECRET=<clave-jwt>
+ADMIN_EMAIL=<email-del-admin>
+ADMIN_PASSWORD=<password-del-admin>
 ```
 
 Redis corre como servicio interno en el mismo proyecto de Railway — no requiere configuración adicional.
+
+**Variables requeridas en Vercel:**
+
+```
+NEXT_PUBLIC_WS_URL=wss://log-sentinel-production.up.railway.app/ws/alerts
+NEXT_PUBLIC_API_URL=https://log-sentinel-production.up.railway.app
+```
 
 ---
 
@@ -171,8 +197,8 @@ Redis corre como servicio interno en el mismo proyecto de Railway — no requier
 - [x] Phase 1 — Motor de detección en Python (CLI, stdlib only)
 - [x] Phase 2 — API REST + Redis Streams + WebSocket en Railway
 - [x] Phase 3 — Dashboard en tiempo real (Next.js + Recharts) en Vercel
-- [ ] Phase 4 — Autenticación JWT + persistencia en Supabase + simulador de tráfico
-- [ ] Phase 5 — README con demo GIF + integración en portfolio
+- [x] Phase 4 — Autenticación JWT + persistencia en Supabase + simulador de tráfico
+- [-] Phase 5 — README con demo GIF + integración en portfolio *(en progreso)*
 
 ---
 

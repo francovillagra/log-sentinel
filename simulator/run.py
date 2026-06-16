@@ -20,7 +20,14 @@ import httpx
 
 # --- configuration (env or defaults) ----------------------------------------
 INGEST_URL = os.getenv("INGEST_URL", "https://log-sentinel-production.up.railway.app")
-API_KEY = os.getenv("INGEST_API_KEY", "sentinel-2026")
+API_KEY = os.getenv("INGEST_API_KEY", "")
+if not API_KEY:
+    import sys
+    sys.exit(
+        "Error: INGEST_API_KEY no está seteado.\n"
+        "  export INGEST_API_KEY=<tu-clave>  # Linux/macOS\n"
+        "  $env:INGEST_API_KEY='<tu-clave>'  # PowerShell"
+    )
 RATE = float(os.getenv("RATE", "2.0"))                  # requests per second
 ATTACK_RATIO = float(os.getenv("ATTACK_RATIO", "0.3"))  # share of attack traffic
 
