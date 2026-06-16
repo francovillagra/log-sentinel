@@ -198,7 +198,7 @@ NEXT_PUBLIC_API_URL=https://log-sentinel-production.up.railway.app
 - [x] Phase 2 — API REST + Redis Streams + WebSocket en Railway
 - [x] Phase 3 — Dashboard en tiempo real (Next.js + Recharts) en Vercel
 - [x] Phase 4 — Autenticación JWT + persistencia en Supabase + simulador de tráfico
-- [-] Phase 5 — README con demo GIF + integración en portfolio *(en progreso)*
+- [x] Phase 5 — README con demo GIF + integración en portfolio
 
 ---
 
