@@ -21,10 +21,7 @@ async def get_pool() -> asyncpg.Pool:
         if not dsn:
             raise RuntimeError("DATABASE_URL is not configured")
         ssl_ctx = ssl.create_default_context()
-        _pool = await asyncpg.create_pool(
-            dsn=dsn,
-            ssl=ssl_ctx,
-            min_size=1,
-            max_size=5,
-        )
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        _pool = await asyncpg.create_pool(dsn, ssl=ssl_ctx, min_size=1, max_size=5)
     return _pool
