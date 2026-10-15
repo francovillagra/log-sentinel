@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useMemo, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAlertStream } from '@/hooks/useAlertStream';
 import { SEVERITIES } from '@/lib/severity';
 import type { Severity, Alert } from '@/lib/types';
-import { isAuthenticated, getToken } from '@/lib/auth';
+import { getValidToken, removeToken, subscribeToken } from '@/lib/auth';
 import ConnectionStatus from '@/components/ConnectionStatus';
 import SeverityCounters from '@/components/SeverityCounters';
 import AlertFeed from '@/components/AlertFeed';
@@ -18,24 +18,37 @@ const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8000/ws/alerts
 const WINDOW_MS = 120_000;
 const BUCKET_MS = 5_000;
 
-function Dashboard({ token }: { token: string }) {
-  const wsUrl = `${WS_BASE}?token=${token}`;
+function Dashboard({ token, onUnauthorized }: { token: string; onUnauthorized: () => void }) {
+  const wsUrl = `${WS_BASE}?token=${encodeURIComponent(token)}`;
   const [history, setHistory] = useState<Alert[]>([]);
-  const { alerts: streaming, status, clear: clearStreaming } = useAlertStream(wsUrl);
+  const { alerts: streaming, status, clear: clearStreaming } = useAlertStream(wsUrl, onUnauthorized);
 
   useEffect(() => {
     fetch(`${API_URL}/api/v1/alerts`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        if (r.status === 401) {
+          onUnauthorized(); // token vencido o inválido
+          return [];
+        }
+        return r.ok ? r.json() : [];
+      })
       .then((data: Alert[]) => setHistory(data))
       .catch(() => {});
-  }, [token]);
+  }, [token, onUnauthorized]);
 
   const clear = useCallback(() => {
     clearStreaming();
     setHistory([]);
   }, [clearStreaming]);
+
+  // "Ahora" del gráfico: avanza solo, así la ventana de 2 minutos se desplaza aunque no lleguen alertas.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), BUCKET_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const allAlerts = useMemo(() => {
     const seen = new Set<string>();
@@ -65,7 +78,6 @@ function Dashboard({ token }: { token: string }) {
   }, [allAlerts]);
 
   const timeline = useMemo(() => {
-    const now = Date.now();
     const numBuckets = Math.floor(WINDOW_MS / BUCKET_MS);
     const buckets = Array.from({ length: numBuckets }, (_, i) => {
       const bucketStart = now - WINDOW_MS + i * BUCKET_MS;
@@ -89,7 +101,7 @@ function Dashboard({ token }: { token: string }) {
       }
     }
     return buckets;
-  }, [allAlerts]);
+  }, [allAlerts, now]);
 
   return (
     <main className="min-h-screen bg-[#0d1117] text-[#c9d1d9] p-4 md:p-6">
@@ -135,20 +147,23 @@ function Dashboard({ token }: { token: string }) {
   );
 }
 
+const subscribeNothing = () => () => {};
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
+  // El token vive en localStorage, que el servidor no ve: se lee como fuente externa. En el servidor (y mientras
+  // React hidrata) vale null y `hydrated` es false, así no se redirige antes de saber si hay sesión.
+  const token = useSyncExternalStore(subscribeToken, getValidToken, () => null);
+  const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
 
   useEffect(() => {
-    const t = getToken();
-    if (!isAuthenticated() || !t) {
-      router.replace('/login');
-      return;
-    }
-    setToken(t);
-  }, [router]);
+    if (hydrated && !token) router.replace('/login');
+  }, [hydrated, token, router]);
+
+  // Token vencido o rechazado: se borra y el efecto de arriba lleva al login.
+  const onUnauthorized = useCallback(() => removeToken(), []);
 
   if (!token) return null;
 
-  return <Dashboard token={token} />;
+  return <Dashboard token={token} onUnauthorized={onUnauthorized} />;
 }

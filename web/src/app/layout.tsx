@@ -12,6 +12,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Cada pedido se renderiza en el servidor: el nonce de la Content-Security-Policy (src/proxy.ts) es distinto cada vez
+// y Next solo puede ponérselo a los scripts al renderizar, no al construir.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "log-sentinel",
   description: "Real-time security log monitoring dashboard",

@@ -5,14 +5,29 @@ export function getToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
 }
 
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
+
 export function setToken(token: string): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(TOKEN_KEY, token);
+  notify();
 }
 
 export function removeToken(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(TOKEN_KEY);
+  notify();
+}
+
+/** Para useSyncExternalStore: avisa cuando el token cambia en esta pestaña o en otra (evento `storage`). */
+export function subscribeToken(listener: () => void): () => void {
+  listeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
 }
 
 interface JwtPayload {
@@ -41,4 +56,9 @@ export function isAuthenticated(): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload || typeof payload.exp !== 'number') return false;
   return payload.exp * 1000 > Date.now();
+}
+
+/** El token si hay uno vigente; null si no hay o ya venció. Devuelve el mismo valor mientras nada cambie. */
+export function getValidToken(): string | null {
+  return isAuthenticated() ? getToken() : null;
 }
