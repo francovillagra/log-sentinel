@@ -223,7 +223,7 @@ NEXT_PUBLIC_API_URL=https://log-sentinel-production.up.railway.app
 ## Seguridad
 
 La API y el panel se revisaron como lo haría un atacante y se corrigió lo encontrado. Las correcciones están cubiertas
-por pruebas (`tests/api/`: 77, las de login e historial contra PostgreSQL real) que se comprobaron rompiendo cada
+por pruebas (`tests/api/`: 86, las de login e historial contra PostgreSQL real) que se comprobaron rompiendo cada
 protección a propósito, y por el CI (`.github/workflows/`), que además construye la imagen y la levanta.
 
 | Superficie | Qué hace |
