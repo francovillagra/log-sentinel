@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import asyncpg
@@ -47,6 +48,30 @@ async def save_alert(pool: asyncpg.Pool, alert: Alert) -> None:
             )
     except Exception as exc:  # noqa: BLE001 — fire-and-forget, must not propagate
         log.error("save_alert failed: %s", exc)
+
+
+# Guardados en segundo plano: se guarda una referencia a cada tarea (Python puede descartar una tarea que nadie
+# referencia antes de que termine) y hay un tope de pendientes. Con el tope, un flujo de ataques no hace crecer la
+# memoria sin límite mientras la base no da abasto: las alertas que no entran en la cola se cuentan y se avisan en el
+# log (siguen yendo al stream de Redis, al WebSocket y a la respuesta de /ingest).
+MAX_PENDING_SAVES = 500
+_pending_saves: set[asyncio.Task] = set()
+dropped_saves = 0
+
+
+def schedule_save(pool: asyncpg.Pool, alert: Alert) -> bool:
+    """Programa el guardado de una alerta sin esperar. Devuelve False si se descartó por el tope de pendientes."""
+    global dropped_saves
+    if len(_pending_saves) >= MAX_PENDING_SAVES:
+        dropped_saves += 1
+        if dropped_saves == 1 or dropped_saves % 1000 == 0:
+            log.warning("save_alert: %d alertas sin guardar en la base (cola llena, %d pendientes)",
+                        dropped_saves, len(_pending_saves))
+        return False
+    task = asyncio.create_task(save_alert(pool, alert))
+    _pending_saves.add(task)
+    task.add_done_callback(_pending_saves.discard)
+    return True
 
 
 async def get_recent_alerts(pool: asyncpg.Pool, limit: int = 200) -> list[dict]:
