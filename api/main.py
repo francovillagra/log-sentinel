@@ -72,16 +72,19 @@ def build_engine() -> Engine:
 
 
 async def ensure_admin_user(pool) -> None:
-    """Seed the initial admin user if the users table is empty."""
+    """Seed the initial admin user if the users table is empty.
+
+    ADMIN_PASSWORD solo hace falta (y solo se valida) cuando hay que crear la cuenta: una vez creada se puede
+    sacar del entorno, así la contraseña del administrador no queda guardada en la configuración del servicio."""
     email = os.environ.get("ADMIN_EMAIL", "admin@log-sentinel.dev").strip().lower()
-    password = os.environ.get("ADMIN_PASSWORD")
-    if not password:
-        raise RuntimeError("ADMIN_PASSWORD is not configured")
 
     async with pool.acquire() as conn:
         count = await conn.fetchval("SELECT count(*) FROM users")
         if count == 0:
-            # Solo al crear la cuenta: una contraseña débil acá es la del administrador de todo el panel.
+            password = os.environ.get("ADMIN_PASSWORD")
+            if not password:
+                raise RuntimeError("ADMIN_PASSWORD is not configured (hace falta para crear el primer administrador)")
+            # Una contraseña débil acá es la del administrador de todo el panel.
             validate_admin_password(password)
             await conn.execute(
                 "INSERT INTO users (email, password_hash) VALUES ($1, $2)",

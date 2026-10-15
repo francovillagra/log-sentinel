@@ -197,7 +197,7 @@ JWT_SECRET=<64 caracteres aleatorios, distinto del anterior>
 CORS_ORIGINS=https://log-sentinel-eta.vercel.app
 DATABASE_URL=<supabase-postgres-connection-string>
 ADMIN_EMAIL=<email-del-admin>
-ADMIN_PASSWORD=<12+ caracteres; solo se usa si la tabla users está vacía>
+ADMIN_PASSWORD=<12+ caracteres; solo hace falta para crear el primer administrador, después se puede sacar>
 TRUSTED_PROXY_COUNT=1
 ```
 
