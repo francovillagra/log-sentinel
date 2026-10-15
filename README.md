@@ -101,8 +101,10 @@ log-sentinel/
 │                            # TimelineChart, TopAttackers
 ├── cli.py                   # CLI para correr el motor standalone
 ├── samples/                 # Logs de prueba con ataques embebidos
+├── tests/                   # engine/ (motor) y api/ (API contra PostgreSQL real)
 ├── Dockerfile
-└── requirements.txt
+├── requirements.txt         # dependencias de producción, versiones fijas
+└── requirements-dev.txt     # + pytest
 ```
 
 ---
@@ -118,14 +120,22 @@ python cli.py samples/access.log
 cat /var/log/nginx/access.log | python cli.py -
 ```
 
-### API completa — requiere Redis
+### API completa — requiere Redis y PostgreSQL
 
 ```bash
 pip install -r requirements.txt
+psql "$DATABASE_URL" -f schema.sql            # tablas users y alerts
+export DATABASE_URL=postgresql://usuario:clave@localhost:5432/logsentinel
 export UPSTASH_REDIS_URL=redis://localhost:6379
-export INGEST_API_KEY=your-secret-key
+# La API se niega a arrancar con secretos cortos, repetitivos o de ejemplo. Generá uno distinto para cada variable:
+export JWT_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))")
+export INGEST_API_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+export ADMIN_EMAIL=vos@ejemplo.com            # el administrador se crea solo si la tabla users está vacía
+export ADMIN_PASSWORD='una-contraseña-larga-y-única'   # 12+ caracteres
 uvicorn api.main:app --reload
 ```
+
+El `.env.example` lista todas las variables (obligatorias, recomendadas y opcionales).
 
 ### Dashboard
 
@@ -146,6 +156,15 @@ INGEST_API_KEY=<your-key> python simulator/run.py
 # Variables opcionales:
 #   RATE=2.0          requests por segundo (default: 2)
 #   ATTACK_RATIO=0.3  proporción de tráfico malicioso (default: 0.3)
+```
+
+### Pruebas
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q                      # el motor y lo que no necesita base de datos
+# Las de la API usan PostgreSQL de verdad: una base descartable (el nombre debe incluir "test") con schema.sql aplicado.
+TEST_DATABASE_URL=postgresql://usuario:clave@localhost:5432/logsentinel_test python -m pytest -q
 ```
 
 ### Test rápido end-to-end
@@ -173,13 +192,22 @@ Resultado esperado: `alerts_fired: 2` (`path_traversal` HIGH + `suspicious_ua` M
 **Variables requeridas en Railway:**
 
 ```
-INGEST_API_KEY=<clave-secreta>
+INGEST_API_KEY=<64 caracteres aleatorios>
+JWT_SECRET=<64 caracteres aleatorios, distinto del anterior>
 CORS_ORIGINS=https://log-sentinel-eta.vercel.app
 DATABASE_URL=<supabase-postgres-connection-string>
-JWT_SECRET=<clave-jwt>
 ADMIN_EMAIL=<email-del-admin>
-ADMIN_PASSWORD=<password-del-admin>
+ADMIN_PASSWORD=<12+ caracteres; solo se usa si la tabla users está vacía>
+TRUSTED_PROXY_COUNT=1
 ```
+
+`INGEST_API_KEY` y `JWT_SECRET` se validan al arrancar: si son cortos, repetitivos o parecen un valor de ejemplo
+(`change-me…`), la API no inicia y el log dice cuál es el problema. `TRUSTED_PROXY_COUNT=1` hace que los límites de
+intentos cuenten por la IP real del cliente (Railway es un proxy) y no por la del proxy.
+
+Opcional pero recomendado: verificar el certificado de la base de datos. Bajá la CA de Supabase (Database → Settings →
+SSL Configuration) y configurá `DATABASE_SSL_CA` (el texto PEM o la ruta al archivo) y `DATABASE_SSL_MODE=verify-full`.
+Sin eso la conexión va cifrada pero no se verifica a quién se le habla (`require`, el valor por defecto, que avisa en el log).
 
 Redis corre como servicio interno en el mismo proyecto de Railway — no requiere configuración adicional.
 
@@ -189,6 +217,30 @@ Redis corre como servicio interno en el mismo proyecto de Railway — no requier
 NEXT_PUBLIC_WS_URL=wss://log-sentinel-production.up.railway.app/ws/alerts
 NEXT_PUBLIC_API_URL=https://log-sentinel-production.up.railway.app
 ```
+
+---
+
+## Seguridad
+
+La API y el panel se revisaron como lo haría un atacante y se corrigió lo encontrado. Las correcciones están cubiertas
+por pruebas (`tests/api/`: 77, las de login e historial contra PostgreSQL real) que se comprobaron rompiendo cada
+protección a propósito, y por el CI (`.github/workflows/`), que además construye la imagen y la levanta.
+
+| Superficie | Qué hace |
+|---|---|
+| Login | Límite de intentos fallidos por dirección y por dirección + cuenta (429 con `Retry-After`); el hash de bcrypt corre fuera del hilo principal con tope de trabajos y de espera (503 si se satura); un correo inexistente tarda igual que uno real; tope de tamaño de los campos |
+| Sesión | JWT HS256 con `exp`, `iat`, `sub`, emisor y audiencia obligatorios; 24 h; el panel cierra la sesión solo si la API la rechaza |
+| Ingesta | Clave en `X-API-Key` comparada en tiempo constante; tope de líneas (1000) y de bytes (2 MB) por pedido |
+| HTTP | Tope de cuerpo (413) también para cuerpos sin `Content-Length`; cabeceras de seguridad en todas las respuestas, incluidos los errores; CORS solo con los orígenes configurados y sin credenciales; `/docs` y `/openapi.json` solo con `DEBUG=true`; los errores de validación no repiten lo recibido y los 500 son genéricos |
+| WebSocket | Token válido + `Origin` permitido; tope de conexiones; un cliente lento no frena a los demás; el token no se escribe en los logs |
+| Base de datos | Conexión TLS con verificación opcional (`verify-full`); guardado de alertas en segundo plano acotado |
+| Contenedor | Corre sin root, con dependencias fijadas, sin cabecera `Server` |
+| Panel (Next.js) | Content-Security-Policy con nonce por pedido (`src/proxy.ts`), cabeceras fijas, `poweredByHeader` apagado; `npm audit` de producción sin vulnerabilidades |
+
+**Límites que quedan, a propósito:** el token de sesión vive en `localStorage` (la CSP estricta reduce el riesgo de XSS
+que lo robaría, pero no lo elimina) y viaja en la URL del WebSocket porque el navegador no puede mandar encabezados
+ahí (por eso se tacha de los logs). Las alertas no tienen retención: la tabla crece sin límite. Un único usuario
+administrador; no hay roles.
 
 ---
 
