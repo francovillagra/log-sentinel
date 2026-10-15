@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -8,6 +9,8 @@ from api.dependencies import verify_api_key
 from api.services.alerts_db import schedule_save
 from api.services.stream import write_alert
 from engine.models import Alert
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_api_key)])
 
@@ -71,7 +74,12 @@ async def ingest(body: IngestRequest, request: Request) -> IngestResponse:
         processed += 1
         _event, alerts = engine.process_line(raw)
         for alert in alerts:
-            await write_alert(redis, alert)
+            # Redis solo alimenta el panel en vivo. Si está caído la alerta no se pierde: se guarda en la base y
+            # vuelve en la respuesta; antes el pedido entero fallaba con 500 y el cliente podía no reintentar.
+            try:
+                await write_alert(redis, alert)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("No se pudo publicar la alerta en Redis (%s): sigue guardándose en la base", type(exc).__name__)
             # Persist to Postgres fire-and-forget: a DB write must never block
             # the HTTP response nor fail ingestion. Acotado: ver schedule_save.
             schedule_save(request.app.state.db_pool, alert)

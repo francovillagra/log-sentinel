@@ -101,3 +101,24 @@ async def test_background_saves_are_bounded_and_referenced(monkeypatch):
     assert not alerts_db._pending_saves  # al terminar se liberan
     assert alerts_db.schedule_save(None, _alert()) is True  # y vuelve a haber lugar
     await asyncio.gather(*list(alerts_db._pending_saves))
+
+
+class BrokenRedis:
+    async def xadd(self, *args, **kwargs):
+        raise ConnectionError("redis caído")
+
+    async def aclose(self):
+        pass
+
+
+async def test_ingest_survives_redis_being_down(caplog):
+    import httpx
+
+    from tests.api.conftest import make_app
+
+    transport = httpx.ASGITransport(app=make_app(None, redis=BrokenRedis()), raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/v1/ingest", json={"line": SQLI}, headers=KEY)
+    assert response.status_code == 200  # antes: 500 y la alerta se perdía
+    assert response.json()["alerts_fired"] >= 1  # la alerta vuelve en la respuesta
+    assert "Redis" in caplog.text
