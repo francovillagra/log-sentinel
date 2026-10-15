@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: logsentinel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d logsentinel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Base descartable del servicio de arriba (las pruebas la vacían): no es un valor real.
+      TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/logsentinel_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      # Aplica el esquema desde cero: si el SQL no se puede ejecutar, falla acá.
+      - run: psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f schema.sql
+      - run: python -m pytest -q
+
+  api-audit:
+    name: Avisos de seguridad en las dependencias de la API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt
+
+  web:
+    name: Panel (lint, build, cabeceras de seguridad)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000/ws/alerts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # El build también revisa los tipos.
+      - run: npm run build
+      # Arranca el servidor ya construido y falla si una página pierde la CSP, su nonce o una cabecera.
+      - run: npm run check:headers
+      # Solo producción: las alertas de las herramientas de desarrollo (lint) no llegan a lo que se publica.
+      - run: npm audit --omit=dev --audit-level=high
+
+  docker:
+    name: La imagen de la API corre sin root, rechaza secretos débiles y responde
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: logsentinel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d logsentinel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Construir la imagen
+        run: docker build -t log-sentinel-api .
+      - name: No corre como root
+        run: |
+          uid=$(docker run --rm --entrypoint id log-sentinel-api -u)
+          echo "uid=$uid"
+          test "$uid" != 0
+      - name: Se niega a arrancar con un secreto de ejemplo
+        run: |
+          # Valores de prueba solo para este job. El de JWT es el del .env.example: la API tiene que rechazarlo.
+          if docker run --rm -e JWT_SECRET=change-me-before-deploy -e INGEST_API_KEY=ci-ingest-4Fq8ZtLm2VxBn7RcYh3SgJw9UaEk5DoP \
+               -e DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/logsentinel -e ADMIN_PASSWORD=ci-admin-Hd7Pq3LmZx9V log-sentinel-api > weak.log 2>&1; then
+            echo "::error::la API arrancó con un JWT_SECRET de ejemplo"; cat weak.log; exit 1
+          fi
+          grep -q "JWT_SECRET tiene que tener" weak.log
+      - name: Aplicar el esquema de la base
+        run: psql "postgresql://ci:ci@127.0.0.1:5432/logsentinel" -v ON_ERROR_STOP=1 -f schema.sql
+      - name: Arrancar con secretos buenos
+        run: |
+          docker run -d --name ls --network host \
+            -e JWT_SECRET=ci-jwt-8Qm2xLk7VdP4wT9nZc1RbYh6SfJ3uAe5GoXiNvKt0 \
+            -e INGEST_API_KEY=ci-ingest-4Fq8ZtLm2VxBn7RcYh3SgJw9UaEk5DoP \
+            -e DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/logsentinel -e DATABASE_SSL_MODE=disable \
+            -e UPSTASH_REDIS_URL=redis://127.0.0.1:6379/0 \
+            -e ADMIN_EMAIL=ci@example.com -e ADMIN_PASSWORD=ci-admin-Hd7Pq3LmZx9V \
+            -e CORS_ORIGINS=http://localhost:3000 \
+            log-sentinel-api
+      - name: Responde con cabeceras de seguridad, sin documentación y con el login funcionando
+        run: |
+          set -euo pipefail
+          curl --retry 30 --retry-delay 2 --retry-all-errors -fsS -D headers.txt -o /dev/null http://127.0.0.1:8000/health
+          cat headers.txt
+          if grep -qi '^server:' headers.txt; then echo "::error::la respuesta anuncia el servidor"; exit 1; fi
+          grep -qi '^x-content-type-options: nosniff' headers.txt
+          grep -qi '^content-security-policy:' headers.txt
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/docs)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/v1/ingest -H 'content-type: application/json' -d '{"line":"x"}')" = 401
+          json='content-type: application/json'
+          curl -fsS -X POST http://127.0.0.1:8000/api/v1/auth/login -H "$json" \
+            -d '{"email":"ci@example.com","password":"ci-admin-Hd7Pq3LmZx9V"}' | jq -e '.access_token'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/v1/auth/login -H "$json" \
+            -d '{"email":"ci@example.com","password":"otra"}')" = 401
+      - name: Registro del contenedor (solo si algo falló)
+        if: failure()
+        run: docker logs ls --tail 60 || true
+      - name: Apagar
+        if: always()
+        run: docker rm -f ls || true

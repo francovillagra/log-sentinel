@@ -6,6 +6,12 @@ import { setToken } from '@/lib/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+/** "5 minutos" / "40 segundos" a partir del encabezado Retry-After (en segundos). */
+function formatWait(seconds: number): string {
+  if (seconds >= 90) return `${Math.ceil(seconds / 60)} minutos`;
+  return `${Math.max(1, Math.ceil(seconds))} segundos`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -26,6 +32,20 @@ export default function LoginPage() {
 
       if (res.status === 401) {
         setError('Credenciales inválidas');
+        return;
+      }
+      if (res.status === 429) {
+        // Demasiados intentos fallidos: la API dice cuánto esperar (Retry-After, expuesto por CORS).
+        const wait = Number(res.headers.get('Retry-After'));
+        setError(
+          wait > 0
+            ? `Demasiados intentos fallidos. Probá de nuevo en ${formatWait(wait)}.`
+            : 'Demasiados intentos fallidos. Probá de nuevo más tarde.',
+        );
+        return;
+      }
+      if (res.status === 503) {
+        setError('El servidor está ocupado. Probá de nuevo en unos segundos.');
         return;
       }
       if (!res.ok) {
@@ -67,6 +87,7 @@ export default function LoginPage() {
               id="email"
               type="email"
               required
+              maxLength={254}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"
@@ -82,6 +103,7 @@ export default function LoginPage() {
               id="password"
               type="password"
               required
+              maxLength={128}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"

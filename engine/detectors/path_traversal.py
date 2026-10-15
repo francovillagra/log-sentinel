@@ -1,4 +1,3 @@
-import urllib.parse
 from typing import Optional
 
 from engine.detectors.base import Detector
@@ -8,9 +7,7 @@ from engine.rules import PATH_TRAVERSAL_PATTERN
 
 class PathTraversalDetector(Detector):
     def inspect(self, event: LogEvent) -> Optional[Alert]:
-        raw = event.path + ("?" + event.query if event.query else "")
-        target = urllib.parse.unquote(raw)
-        m = PATH_TRAVERSAL_PATTERN.search(target)
+        m = PATH_TRAVERSAL_PATTERN.search(event.target.decoded)
         if not m:
             return None
         return Alert(

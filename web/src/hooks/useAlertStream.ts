@@ -15,7 +15,10 @@ interface UseAlertStreamResult {
   clear: () => void;
 }
 
-export function useAlertStream(wsUrl: string): UseAlertStreamResult {
+/** Código con el que la API cierra el WebSocket cuando el token es inválido o venció. */
+const CLOSE_UNAUTHORIZED = 4001;
+
+export function useAlertStream(wsUrl: string, onUnauthorized?: () => void): UseAlertStreamResult {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
 
@@ -23,6 +26,11 @@ export function useAlertStream(wsUrl: string): UseAlertStreamResult {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef<number>(BACKOFF_START);
   const mountedRef = useRef<boolean>(true);
+  const connectRef = useRef<() => void>(() => {});
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  useEffect(() => {
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -63,17 +71,26 @@ export function useAlertStream(wsUrl: string): UseAlertStreamResult {
       // onclose fires right after and handles reconnect
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       if (!mountedRef.current) return;
       setStatus('disconnected');
       wsRef.current = null;
       clearTimer();
+      if (event.code === CLOSE_UNAUTHORIZED) {
+        // La sesión venció: reintentar con el mismo token no sirve, hay que volver a ingresar.
+        onUnauthorizedRef.current?.();
+        return;
+      }
       timerRef.current = setTimeout(() => {
         backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX);
-        connect();
+        connectRef.current();
       }, backoffRef.current);
     };
   }, [wsUrl]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     mountedRef.current = true;
