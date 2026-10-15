@@ -1,4 +1,3 @@
-import urllib.parse
 from typing import Optional
 
 from engine.detectors.base import Detector
@@ -6,15 +5,10 @@ from engine.models import Alert, LogEvent, Severity
 from engine.rules import SQLI_PATTERN, XSS_PATTERN
 
 
-def _decoded_target(event: LogEvent) -> str:
-    raw = event.path + ("?" + event.query if event.query else "")
-    return urllib.parse.unquote(raw)
-
-
 class SqlInjectionDetector(Detector):
     def inspect(self, event: LogEvent) -> Optional[Alert]:
-        target = _decoded_target(event)
-        m = SQLI_PATTERN.search(target)
+        # `target.sql`: ruta + query decodificadas (también `+`, doble codificación, entidades) y con los comentarios /* */ resueltos.
+        m = SQLI_PATTERN.search(event.target.sql)
         if not m:
             return None
         return Alert(
@@ -31,8 +25,7 @@ class SqlInjectionDetector(Detector):
 
 class XssDetector(Detector):
     def inspect(self, event: LogEvent) -> Optional[Alert]:
-        target = _decoded_target(event)
-        m = XSS_PATTERN.search(target)
+        m = XSS_PATTERN.search(event.target.decoded)
         if not m:
             return None
         return Alert(
