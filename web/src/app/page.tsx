@@ -34,7 +34,14 @@ function Dashboard({ token, onUnauthorized }: { token: string; onUnauthorized: (
         }
         return r.ok ? r.json() : [];
       })
-      .then((data: Alert[]) => setHistory(data))
+      .then((data: unknown) => {
+        if (!Array.isArray(data)) return;
+        // Las alertas guardadas llegan sin `id` (el `stream_id` se guarda vacío): sin un id propio la lista las
+        // tomaba a todas por la misma y mostraba una sola fila.
+        setHistory(
+          (data as Alert[]).map((a, i) => ({ ...a, id: a.stream_id ?? `db-${i}-${a.ts}-${a.rule_id}-${a.src_ip}` })),
+        );
+      })
       .catch(() => {});
   }, [token, onUnauthorized]);
 
