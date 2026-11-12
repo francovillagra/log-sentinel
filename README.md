@@ -99,9 +99,10 @@ log-sentinel/
 │       ├── hooks/           # useAlertStream — WebSocket con exponential backoff
 │       └── components/      # ConnectionStatus, SeverityCounters, AlertFeed,
 │                            # TimelineChart, TopAttackers
+├── demo/                    # Demo local con Docker: sistema completo + consola de práctica
 ├── cli.py                   # CLI para correr el motor standalone
 ├── samples/                 # Logs de prueba con ataques embebidos
-├── tests/                   # engine/ (motor) y api/ (API contra PostgreSQL real)
+├── tests/                   # engine/ (motor), api/ (API contra PostgreSQL real) y demo/ (consola de práctica)
 ├── Dockerfile
 ├── requirements.txt         # dependencias de producción, versiones fijas
 └── requirements-dev.txt     # + pytest
@@ -110,6 +111,15 @@ log-sentinel/
 ---
 
 ## Correr localmente
+
+### Demo local — todo el sistema con un comando (Docker)
+
+```bash
+cd demo
+docker compose up --build
+```
+
+Levanta la API, el motor, Redis, PostgreSQL y el panel, más una **consola de práctica** (http://localhost:4000) con un botón por tipo de ataque: cada clic manda tráfico de práctica al sistema y se ve el aviso aparecer en vivo en el panel. Todo queda en la computadora (puertos solo en `127.0.0.1`, credenciales generadas al arrancar, direcciones reservadas para documentación). Pasos, puertos y solución de problemas en [`demo/README.md`](demo/README.md).
 
 ### Motor de detección — sin dependencias externas
 
