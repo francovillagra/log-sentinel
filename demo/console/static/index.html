@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Consola de práctica de Log-Sentinel</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1117'/%3E%3Cpath d='M16 5l9 3.5v7c0 5.2-3.7 9.2-9 11.5-5.3-2.3-9-6.3-9-11.5v-7z' fill='none' stroke='%233fb950' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M11.5 16.2l3.2 3.1 6-6.4' fill='none' stroke='%233fb950' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div class="titles">
+        <h1>Consola de práctica</h1>
+        <p class="lead">Cada botón le envía al sistema tráfico de práctica, como si llegara a un sitio web real, y muestra qué detectó. Todo queda en esta computadora y nada sale a internet.</p>
+      </div>
+      <p id="status" class="status" data-state="wait" role="status">Revisando el sistema…</p>
+    </header>
+
+    <div class="layout">
+      <section class="tests" aria-labelledby="tests-title">
+        <h2 id="tests-title">Pruebas</h2>
+        <ul id="scenarios" class="rows"></ul>
+      </section>
+
+      <div class="side">
+        <section class="access" aria-labelledby="access-title">
+          <div class="access-head">
+            <h2 id="access-title">Panel de avisos</h2>
+            <a id="panel-link" class="btn primary" href="/" target="_blank" rel="noopener noreferrer">Abrir el panel</a>
+          </div>
+          <p>Abrirlo en otra ventana, al lado de esta: cada aviso aparece ahí en vivo.</p>
+          <dl id="creds" class="creds" hidden>
+            <div><dt>Usuario</dt><dd id="cred-email" class="mono"></dd></div>
+            <div>
+              <dt>Contraseña</dt>
+              <dd>
+                <span id="cred-pass" class="mono"></span>
+                <span class="actions">
+                  <button id="toggle-pass" type="button" class="link" aria-controls="cred-pass">Mostrar</button>
+                  <button id="copy-pass" type="button" class="link">Copiar</button>
+                </span>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="activity" aria-labelledby="log-title">
+          <div class="log-head">
+            <h2 id="log-title">Lo que va pasando</h2>
+            <button id="clear" type="button" class="link">Vaciar la lista</button>
+          </div>
+          <ol id="log" class="log" aria-live="polite">
+            <li class="empty">Todavía no se envió nada. Elegir una prueba.</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+
+    <footer>Simulación controlada con datos de práctica. Las direcciones pertenecen a los bloques reservados para documentación (RFC 5737) y no son de nadie. El código de esta demo está en la carpeta <span class="mono">demo/</span> del repositorio.</footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

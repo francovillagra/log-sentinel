@@ -1,0 +1,156 @@
+# Demo local de Log-Sentinel: todo el sistema en esta computadora, con un solo comando.
+#
+#   cd demo
+#   docker compose up --build
+#
+# Después abrir la consola de práctica: http://localhost:4000 (los pasos y las pruebas están en demo/README.md).
+#
+# Qué hay de seguridad en esta demo:
+#   - Los puertos se publican solo en 127.0.0.1: nadie de la red local puede entrar. La base y Redis no publican ninguno.
+#   - No hay credenciales en el repositorio: `init` las genera la primera vez en un volumen de Docker (ver make_secrets.py).
+#   - La base vive en memoria (tmpfs): cada vez que se enciende, empieza vacía.
+#   - Los tres servicios propios corren sin root, sin privilegios extra y sin capacidades de Linux.
+name: log-sentinel-demo
+
+x-console-build: &console-build
+  context: ./console
+
+services:
+  # Genera las credenciales la primera vez (y no las toca después). Termina enseguida.
+  init:
+    build: *console-build
+    image: log-sentinel-demo-console
+    user: root
+    command: ["python", "make_secrets.py"]
+    environment:
+      DEMO_SECRETS_DIR: /run/demo
+    volumes:
+      - demo_credentials:/run/demo
+
+  postgres:
+    image: postgres:16-alpine
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: logsentinel
+      POSTGRES_DB: logsentinel
+      POSTGRES_PASSWORD_FILE: /run/demo/postgres_password
+    volumes:
+      - demo_credentials:/run/demo:ro
+      # Crea las tablas la primera vez que arranca la base.
+      - ../schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 a propósito: mientras la base se inicializa solo escucha por socket, y sin -h el chequeo daría "lista".
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U logsentinel -d logsentinel"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: log-sentinel-demo-api
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_SSL_MODE: disable
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:${DEMO_WEB_PORT:-4001},http://127.0.0.1:${DEMO_WEB_PORT:-4001}
+    volumes:
+      - demo_credentials:/run/demo:ro
+    # Las credenciales se leen del volumen y se pasan como variables solo al proceso de la API.
+    command:
+      - sh
+      - -c
+      - |
+        export JWT_SECRET="$$(cat /run/demo/jwt_secret)"
+        export INGEST_API_KEY="$$(cat /run/demo/ingest_api_key)"
+        export ADMIN_EMAIL="$$(cat /run/demo/admin_email)"
+        export ADMIN_PASSWORD="$$(cat /run/demo/admin_password)"
+        export DATABASE_URL="postgresql://logsentinel:$$(cat /run/demo/postgres_password)@postgres:5432/logsentinel"
+        exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --no-server-header --no-proxy-headers --ws-max-size 4096
+    ports:
+      - "127.0.0.1:${DEMO_API_PORT:-4002}:8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+
+  # El panel de avisos (el mismo de web/). La dirección de la API queda fija al construirlo.
+  web:
+    build:
+      context: ../web
+      dockerfile: ../demo/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:${DEMO_API_PORT:-4002}
+        NEXT_PUBLIC_WS_URL: ws://localhost:${DEMO_API_PORT:-4002}/ws/alerts
+    image: log-sentinel-demo-web
+    init: true
+    ports:
+      - "127.0.0.1:${DEMO_WEB_PORT:-4001}:3000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+
+  # La consola de práctica: la página con los botones. Arranca la última, cuando todo lo demás ya responde.
+  console:
+    build: *console-build
+    image: log-sentinel-demo-console
+    init: true
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      DEMO_API_URL: http://api:8000
+      DEMO_PANEL_URL: http://localhost:${DEMO_WEB_PORT:-4001}
+      DEMO_CONSOLE_PUBLIC_PORT: ${DEMO_CONSOLE_PORT:-4000}
+      DEMO_SECRETS_DIR: /run/demo
+    volumes:
+      - demo_credentials:/run/demo:ro
+    ports:
+      - "127.0.0.1:${DEMO_CONSOLE_PORT:-4000}:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  demo_credentials:
