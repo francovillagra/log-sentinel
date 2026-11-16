@@ -120,3 +120,14 @@ Las pruebas automáticas de la demo no necesitan Docker: ejecutan cada escenario
 ```bash
 python -m pytest tests/demo -q
 ```
+
+## Cómo se verificó
+
+**En Linux, con Docker Engine y Compose.** El 16/11/2026 se levantó la demo completa en un servidor de GitHub Actions (Ubuntu 26.04, Docker Engine 29.4.2, Docker Compose 5.1.3, Google Chrome) y se comprobó lo siguiente:
+
+- `docker compose up --build --wait` terminó bien en 98 segundos.
+- Los servicios quedaron en orden (9 de 9 comprobaciones): `init` terminó con código 0, `postgres`, `redis`, `api`, `web` y `console` figuran como `healthy`, y la API, la consola y el panel responden 200 desde afuera de Docker.
+- 15 de 15 comprobaciones de seguridad: puertos publicados solo en `127.0.0.1`, contenedores propios sin root y sin capacidades de Linux, y secretos generados al arrancar que no aparecen en los registros de los servicios.
+- Un recorrido con Chrome (22 de 22 comprobaciones): la consola de práctica manda sus 8 pruebas, todas con el veredicto esperado, y el panel, con la cuenta de práctica, muestra las alertas de las seis reglas de detección (`brute_force`, `sqli`, `xss`, `path_traversal`, `suspicious_ua` y `rate_anomaly`); sin desbordes en ancho de celular ni errores en la consola del navegador.
+
+**Sin verificar:** Docker Desktop en Windows y en macOS.
