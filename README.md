@@ -4,9 +4,9 @@
 
 Sistema SIEM liviano de Blue Team que ingiere logs, detecta patrones de ataque en tiempo real mediante reglas personalizadas y transmite alertas a un dashboard live vía WebSocket.
 
-> Parte de una dupla ofensiva/defensiva en mi portfolio junto a [recon-scope](https://github.com/francovillagra/recon-scope).
+> Parte de una dupla ofensiva/defensiva en mi portfolio junto a recon-scope.
 
-**🔴 Demo en vivo:** https://log-sentinel-eta.vercel.app
+**Demo en línea:** en pausa por ahora (la base de datos del plan gratuito está detenida). Hay un video de la demo en el [portfolio](https://francoverse.fvillagra-dev.workers.dev/proyectos) y la demo local (más abajo) corre el sistema completo en una computadora.
 
 ![demo](docs/demo.gif)
 
@@ -119,7 +119,7 @@ cd demo
 docker compose up --build
 ```
 
-Levanta la API, el motor, Redis, PostgreSQL y el panel, más una **consola de práctica** (http://localhost:4000) con un botón por tipo de ataque: cada clic manda tráfico de práctica al sistema y se ve el aviso aparecer en vivo en el panel. Todo queda en la computadora (puertos solo en `127.0.0.1`, credenciales generadas al arrancar, direcciones reservadas para documentación). Pasos, puertos y solución de problemas en [`demo/README.md`](demo/README.md).
+Levanta la API, el motor, Redis, PostgreSQL y el panel, más una **consola de práctica** (http://localhost:4000) con un botón por tipo de ataque: cada clic manda tráfico de práctica al sistema y se ve el aviso aparecer en vivo en el panel. Todo queda en la computadora (puertos solo en `127.0.0.1`, credenciales generadas al arrancar, direcciones reservadas para documentación). Pasos, puertos y solución de problemas en [`demo/README.md`](demo/README.md). Se verificó el 16/11/2026 en Linux (Docker Engine y Compose, en un servidor de GitHub Actions); **no se verificó en Docker Desktop (Windows ni macOS)**.
 
 ### Motor de detección — sin dependencias externas
 
@@ -196,8 +196,10 @@ Resultado esperado: `alerts_fired: 2` (`path_traversal` HIGH + `suspicious_ua` M
 
 | Servicio | Plataforma | URL |
 |---|---|---|
-| API + WebSocket | Railway | https://log-sentinel-production.up.railway.app |
-| Dashboard | Vercel | https://log-sentinel-eta.vercel.app |
+| API + WebSocket | Railway | `https://log-sentinel-production.up.railway.app` |
+| Dashboard | Vercel | `https://log-sentinel-eta.vercel.app` |
+
+Estado: en pausa por ahora (la base de datos del plan gratuito está detenida); estas direcciones no sirven como demo.
 
 **Variables requeridas en Railway:**
 
@@ -270,7 +272,7 @@ Este proyecto forma parte de una dupla de seguridad:
 
 | Proyecto | Tipo | Descripción |
 |---|---|---|
-| [recon-scope](https://github.com/francovillagra/recon-scope) | 🔴 Ofensiva | Reconocimiento automatizado para assessments autorizados |
+| recon-scope | 🔴 Ofensiva | Reconocimiento automatizado para assessments autorizados |
 | **log-sentinel** | 🔵 Defensiva | Detección y monitoreo de ataques en tiempo real |
 
 La combinación ilustra el ciclo completo: identificar vectores de ataque (red team) y detectarlos en producción (blue team).
@@ -279,11 +281,11 @@ La combinación ilustra el ciclo completo: identificar vectores de ataque (red t
 
 ## Autor
 
-**Franco Villagra** — Desarrollador Ciberseguridad
+**Franco Villagra** — Desarrollador orientado a Ciberseguridad
 
 - Portfolio: https://francoverse.fvillagra-dev.workers.dev/
 - GitHub: [@francovillagra](https://github.com/francovillagra)
 
 ## Licencia
 
-Licencia MIT — libre para usar, modificar y distribuir.
+Todos los derechos reservados (ver [LICENSE](LICENSE)). El código se comparte a pedido y bajo acuerdo de confidencialidad, solo para consulta y evaluación.
